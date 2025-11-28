@@ -1,5 +1,7 @@
 from datetime import date
 from typing import List, Optional
+from datetime import datetime, timedelta
+
 
 from fastapi import FastAPI, Depends, HTTPException, status
 from pydantic import BaseModel, EmailStr, Field
@@ -12,6 +14,7 @@ from sqlalchemy import (
     Float,
     Date,
     ForeignKey,
+    DateTime,
 )
 from sqlalchemy.orm import sessionmaker, declarative_base, relationship, Session
 
@@ -68,9 +71,31 @@ class Employee(Base):
     department_id = Column(Integer, ForeignKey("departments.id"), nullable=True)
     department = relationship("Department", back_populates="employees")
 
+    # ✅ IMPORTANT: this must exist and the name must match back_populates in Attendance
+    attendance_records = relationship(
+        "Attendance",
+        back_populates="employee",
+        cascade="all, delete-orphan",
+    )
+
+
+class Attendance(Base):
+    __tablename__ = "attendance"
+
+    id = Column(Integer, primary_key=True, index=True)
+    employee_id = Column(Integer, ForeignKey("employees.id"), nullable=False)
+    date = Column(Date, nullable=False)
+    check_in = Column(DateTime, nullable=False)
+    check_out = Column(DateTime, nullable=True)
+    total_hours = Column(Float, nullable=True)
+
+    # ✅ back_populates MUST match Employee.attendance_records
+    employee = relationship("Employee", back_populates="attendance_records")
+
 
 # Create tables
 Base.metadata.create_all(bind=engine)
+
 
 
 # ============================================
@@ -131,6 +156,26 @@ class EmployeeRead(EmployeeBase):
 
     class Config:
         orm_mode = True
+
+        # ----- Attendance Schemas -----
+
+
+class AttendanceCreate(BaseModel):
+    employee_id: int = Field(..., example=1)
+    check_in: datetime = Field(..., example="2025-11-28T09:00:00")
+
+
+class AttendanceRead(BaseModel):
+    id: int
+    employee_id: int
+    date: date
+    check_in: datetime
+    check_out: Optional[datetime] = None
+    total_hours: Optional[float] = None
+
+    class Config:
+        orm_mode = True
+
 
 
 # ============================================
@@ -335,6 +380,121 @@ def delete_employee(employee_id: int, db: Session = Depends(get_db)):
     db.commit()
     return None
 
+# ============================================
+# Attendance Endpoints
+# ============================================
+
+
+@app.post(
+    "/attendance/check-in",
+    response_model=AttendanceRead,
+    status_code=status.HTTP_201_CREATED,
+    tags=["Attendance"],
+)
+def check_in_attendance(
+    attendance: AttendanceCreate, db: Session = Depends(get_db)
+):
+    # Ensure employee exists
+    employee = db.query(Employee).filter(Employee.id == attendance.employee_id).first()
+    if not employee:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Employee not found.",
+        )
+
+    # Derive date from check_in timestamp
+    attendance_date = attendance.check_in.date()
+
+    # Optional: prevent multiple check-ins on same day
+    existing = (
+        db.query(Attendance)
+        .filter(
+            Attendance.employee_id == attendance.employee_id,
+            Attendance.date == attendance_date,
+        )
+        .first()
+    )
+    if existing:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Attendance already exists for this employee on this date.",
+        )
+
+    db_att = Attendance(
+        employee_id=attendance.employee_id,
+        date=attendance_date,
+        check_in=attendance.check_in,
+    )
+    db.add(db_att)
+    db.commit()
+    db.refresh(db_att)
+    return db_att
+
+
+class AttendanceCheckout(BaseModel):
+    check_out: datetime = Field(..., example="2025-11-28T18:00:00")
+
+
+@app.put(
+    "/attendance/{attendance_id}/check-out",
+    response_model=AttendanceRead,
+    tags=["Attendance"],
+)
+def check_out_attendance(
+    attendance_id: int,
+    checkout_data: AttendanceCheckout,
+    db: Session = Depends(get_db),
+):
+    att = db.query(Attendance).filter(Attendance.id == attendance_id).first()
+    if not att:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Attendance record not found.",
+        )
+
+    if att.check_out is not None:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Check-out already recorded for this attendance.",
+        )
+
+    if checkout_data.check_out < att.check_in:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Check-out time cannot be earlier than check-in time.",
+        )
+
+    att.check_out = checkout_data.check_out
+    delta = att.check_out - att.check_in
+    att.total_hours = round(delta.total_seconds() / 3600, 2)
+
+    db.commit()
+    db.refresh(att)
+    return att
+
+
+@app.get(
+    "/attendance",
+    response_model=List[AttendanceRead],
+    tags=["Attendance"],
+)
+def list_attendance(
+    employee_id: Optional[int] = None,
+    date_filter: Optional[date] = None,
+    db: Session = Depends(get_db),
+):
+    """List attendance with optional filters."""
+    query = db.query(Attendance)
+
+    if employee_id is not None:
+        query = query.filter(Attendance.employee_id == employee_id)
+
+    if date_filter is not None:
+        query = query.filter(Attendance.date == date_filter)
+
+    return query.order_by(Attendance.date.desc()).all()
+
+
 
 # ============================================
 # Root health check
@@ -346,7 +506,7 @@ def root():
     return {
         "message": "Employee Management Mini ERP API is running",
         "author": "Created by Jaffar Shariff",
-        "github": "https://github.com/<your-username>/employee-mini-erp-api",
+        "github": "https://github.com/jaffar-shariff/employee-mini-erp-api/tree/main",
         "docs": "/docs"
     }
 
