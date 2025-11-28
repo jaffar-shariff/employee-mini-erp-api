@@ -1,30 +1,39 @@
-# Employee Management Mini ERP API
+# 🏢 Employee Management Mini ERP API  
+A lightweight **ERP-style REST API** for managing employees and departments, built using **FastAPI**, **SQLite**, and **SQLAlchemy**.
 
-A simple **ERP-style REST API** to manage employees and departments, built with **FastAPI** and **SQLite**.
+![Python](https://img.shields.io/badge/Python-3.10+-blue)
+![FastAPI](https://img.shields.io/badge/FastAPI-API-green)
+![SQLite](https://img.shields.io/badge/Database-SQLite-lightgrey)
+![License](https://img.shields.io/badge/Status-Active-brightgreen)
 
-## Features
+---
 
-- Create, list, view and delete **departments**
-- Create, list, view, update and delete **employees**
-- Filter employees by:
-  - Active / Inactive status
-  - Department
-- Built using:
-  - FastAPI
-  - SQLAlchemy
-  - SQLite
-  - Pydantic
+## 🚀 Features
 
-## Tech Stack
+### 🧩 Employees
+- Add new employees  
+- View all employees  
+- View employee by ID  
+- Update employee details  
+- Soft-delete employees  
+- Filter by:
+  - Active / inactive  
+  - Department  
 
-- Python 3.x
-- FastAPI
-- SQLite
-- SQLAlchemy
-- Uvicorn
+### 🏬 Departments
+- Create departments  
+- View all departments  
+- View department by ID  
+- Delete department  
 
-## Setup & Run
+### 🛠 Technology Used
+- **FastAPI** (Backend API)
+- **SQLite** (Database)
+- **SQLAlchemy ORM**
+- **Pydantic** (Schema validation)
+- **Uvicorn** (Server)
 
-```bash
-pip install -r requirements.txt
-uvicorn main:app --reload
+---
+
+## 📁 Project Structure
+
